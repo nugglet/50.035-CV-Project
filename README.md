@@ -24,8 +24,51 @@ ability in learning (out-of-domain) semantics at ImageNet scale (github.com)](ht
 
 # Dependencies
 
-> python==3.6 and above
-> pytorch
-> opencv-python==3.4.17
+For the models:
+>python==3.6 and above
+>
+>pytorch==
+>
+>opencv-python==3.4.17
+
+For downloading the datasets:
+>gsutil
+
+# Downloading the Datasets and Directory Structure
+For this project, since the datasets are large, please download the datasets into your project directory.
+
+## Setting up the Directory Structure
+For standardization, please ensure that your directory structure is as follows:
+
+50.039-CV-PROJECT
+    Datasets
+        Cybertron
+        ImageNet-Sketch
+        Quick-Draw
+
+Do take note that these datasets are quite large and will take a while to download.
+
+## Downloading ImageNet-Sketch
+Download the data set from this [google drive](https://drive.google.com/file/d/1Mj0i5HBthqH1p_yeXzsg22gZduvgoNeA/view) or [kaggle](https://drive.google.com/file/d/1Mj0i5HBthqH1p_yeXzsg22gZduvgoNeA/view)
+
+Unzip the data and put it in the ImageNet-Sketch folder.
+
+## Downloading Cybertron Dataset
+Download the png version of the dataset [here](http://cybertron.cg.tu-berlin.de/eitz/projects/classifysketch/sketches_png.zip)
+
+Unzip the file and put it in the Cybertron folder.
+
+## Downloading the Google Quick!Draw Dataset
+You will need to install gsutil to get the dataset from Google.
+If using a conda environment, run `conda install -c conda-forge gsutil`
+
+To install, use the following commands:
+```
+cd Datasets
+cd Quick-Draw
+gsutil -m cp "gs://quickdraw_dataset/full/numpy_bitmap/*.npy" .
+
+```
+Do make sure to cd into the Quick-Draw folder first otherwise you're gonna have alot of objects in the Dataset folder (not fun).
 
 # Usage
