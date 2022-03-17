@@ -40,11 +40,13 @@ For this project, since the datasets are large, please download the datasets int
 ## Setting up the Directory Structure
 For standardization, please ensure that your directory structure is as follows:
 
+```
 50.039-CV-PROJECT
     Datasets
         Cybertron
         ImageNet-Sketch
         Quick-Draw
+```
 
 Do take note that these datasets are quite large and will take a while to download.
 
