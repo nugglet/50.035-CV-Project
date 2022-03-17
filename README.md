@@ -74,3 +74,4 @@ gsutil -m cp "gs://quickdraw_dataset/full/numpy_bitmap/*.npy" .
 Do make sure to cd into the Quick-Draw folder first otherwise you're gonna have alot of objects in the Dataset folder (not fun).
 
 # Usage
+Input photo size: 224×224
