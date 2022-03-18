@@ -75,3 +75,7 @@ Do make sure to cd into the Quick-Draw folder first otherwise you're gonna have 
 
 # Usage
 Input photo size: 224×224
+
+# Useful links and resources
+- https://pytorch.org/tutorials/beginner/finetuning_torchvision_models_tutorial.html
+- 
