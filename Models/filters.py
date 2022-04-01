@@ -21,6 +21,18 @@ def get_color_distortion(transform: list, s=1.0):
 def get_gaussian_blur(transform: list):
     pass
 
-def get_gaussian_noise(transform: list):
-    pass
-   
+# p: probability of noise
+def get_gaussian_noise(transform: list, img, p=0.05):
+    row , col, channel = img.shape
+    gaussian_noise = np.zeros((row , col, channel), np.uint8)
+    threshold = 1 - p
+    for i in range(row):
+        for j in range(col):
+            rdn = random.random()
+            if rdn < p:
+                gaussian_noise[i][j] = 0
+            elif rdn > threshold:
+                gaussian_noise[i][j] = 255
+            else:
+                gaussian_noise[i][j] = image[i][j]
+    return gaussian_noise
