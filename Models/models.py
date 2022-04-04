@@ -1,4 +1,5 @@
 import os
+import gc
 import sys
 import time
 import copy
@@ -53,7 +54,8 @@ class CNNClassifier(object):
         # Required arguments:
         # - model: A model object conforming to the API described above
         # - data: path to training data folder
-        
+        # - alias: file name to save model weights
+
         self.model_name = model_name
         self.alias = alias # model name to save checkpoint file
 
@@ -97,22 +99,23 @@ class CNNClassifier(object):
         self.print_model = kwargs.pop('print_model', False)
 
         # get data
-        props = []
+        props = [ transforms.Resize(self.image_size+1),
+                    transforms.CenterCrop(self.image_size)
+                    ]
 
         # apply data augmentation
         if self.colour_distort:
-            props = filters.get_color_distortion(props)
+            props.append(*filters.get_color_distortion())
         if self.gaussian_blur:
-            props = filters.get_gaussian_blur(props)
-        if self.gaussian_noise:
-            props = filters.get_gaussian_noise(props)
+            props.append(*filters.get_gaussian_blur())
 
-        self.transform = transforms.Compose([*props, 
-                                        transforms.Resize(self.image_size+1),
-                                        transforms.CenterCrop(self.image_size),
-                                        transforms.ToTensor(),
-                                        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])])
+        props.append(transforms.ToTensor())
+        if self.gaussian_noise:
+            props.append(*filters.get_gaussian_noise())
+            
+        self.transform = transforms.Compose(props)
+
+        # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
         full = datasets.ImageFolder(train_data_path, transform=self.transform)
 
@@ -122,10 +125,10 @@ class CNNClassifier(object):
         train_dataloader = DataLoader(train, batch_size=self.batch_size, shuffle=True, num_workers=self.workers, pin_memory=True)
         test_dataloader = DataLoader(test, batch_size=self.batch_size, shuffle=True, num_workers=self.workers, pin_memory=True)
         
-        # load val data into dataloader if path given
+        # load val data into dataloader if path given. No data augmentation is performed on the validation data.
         self.val_data_path = kwargs.pop('val_data_path', None)
         if self.val_data_path is not None:
-            val = datasets.ImageFolder(self.val_data_path, transform=self.transform)
+            val = datasets.ImageFolder(self.val_data_path)
             val_dataloader = DataLoader(val, batch_size=self.batch_size, shuffle=True, num_workers=self.workers)
         else:
             val_dataloader = None
@@ -154,6 +157,9 @@ class CNNClassifier(object):
                                 weight_decay=self.lr_decay)
 
         self.scheduler = StepLR(self.optimizer, step_size=30, gamma=0.1)
+
+        # Print Model
+        print(f'Created model: {self.model_name} with pre-processing filter.')
 
         # Throw an error if there are extra keyword arguments
         if len(kwargs) > 0:
@@ -214,14 +220,57 @@ class CNNClassifier(object):
 
             print(f"Epoch {epoch}: completed in {(time.time() - epoch_start)/60 :.2f} minutes")
         print(f"Training Complete in {(time.time() - start)/60 :.2f} minutes")
+        gc.collect()
+        torch.cuda.empty_cache()
         
     def validate(self):
-        # TODO
         # Make predictions on validation set (custom dataset) and return accuracy and results
         if self.dataloaders['val'] is None:
             return "No validation dataset specified"
+
         else:
-            pass
+            val_loader = self.dataloaders['val']
+            batch_time = AverageMeter('Time', ':6.3f', Summary.NONE)
+            losses = AverageMeter('Loss', ':.4e', Summary.NONE)
+            top1 = AverageMeter('Acc@1', ':6.2f', Summary.AVERAGE)
+            top5 = AverageMeter(f'Acc@{self.top_k}', ':6.2f', Summary.AVERAGE)
+            progress = ProgressMeter(
+                len(val_loader),
+                [batch_time, losses, top1, top5],
+                prefix='Validate: ')
+
+            # switch to evaluate mode
+            self.model.eval()
+
+            with torch.no_grad():
+                end = time.time()
+                for i, (images, target) in enumerate(val_loader):
+            
+                    # if torch.cuda.is_available():
+                    #     target = target.cuda(0, non_blocking=True)
+                    images = images.to(self.device)
+                    target = target.to(self.device)
+
+                    # compute output
+                    output = self.model(images)
+                    loss = self.criterion(output, target)
+
+                    # measure accuracy and record loss
+                    acc_1, acc_k = accuracy(output, target, topk=(1, self.top_k))
+                    losses.update(loss.item(), images.size(0))
+                    top1.update(acc_1[0], images.size(0))
+                    top5.update(acc_k[0], images.size(0))
+
+                    # measure elapsed time
+                    batch_time.update(time.time() - end)
+                    end = time.time()
+
+                    if i % self.print_every == 0:
+                        progress.display(i)
+
+                progress.display_summary()
+
+            return top1.avg
         
 
     def _train(self, epoch):
