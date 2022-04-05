@@ -128,7 +128,10 @@ class CNNClassifier(object):
         # load val data into dataloader if path given. No data augmentation is performed on the validation data.
         self.val_data_path = kwargs.pop('val_data_path', None)
         if self.val_data_path is not None:
-            val = datasets.ImageFolder(self.val_data_path)
+            val_props = transforms.Compose([transforms.Resize(self.image_size+1),
+                                            transforms.CenterCrop(self.image_size), 
+                                            transforms.ToTensor()])
+            val = datasets.ImageFolder(self.val_data_path, transform=val_props)
             val_dataloader = DataLoader(val, batch_size=self.batch_size, shuffle=True, num_workers=self.workers)
         else:
             val_dataloader = None
@@ -158,20 +161,6 @@ class CNNClassifier(object):
 
         self.scheduler = StepLR(self.optimizer, step_size=30, gamma=0.1)
 
-        # Print Model
-        print(f'Created model: {self.model_name} with pre-processing filter.')
-
-        # Throw an error if there are extra keyword arguments
-        if len(kwargs) > 0:
-            extra = ', '.join('"%s"' % k for k in list(kwargs.keys()))
-            raise ValueError('Unrecognized arguments %s' % extra)
-
-
-    def train(self):
-        
-        best_acc1 = 0
-        start = time.time()
-
         # if resuming training from checkpoint
         if self.resume:
             if os.path.isfile(self.resume):
@@ -185,9 +174,23 @@ class CNNClassifier(object):
             self.optimizer.load_state_dict(checkpoint['optimizer'])
             self.scheduler.load_state_dict(checkpoint['scheduler'])
             print(f"=> loaded checkpoint '{self.resume}' (epoch {checkpoint['epoch']})")
+
         else:
             print(f"=> no checkpoint found at '{self.resume}'")
 
+        # Print Model
+        print(f'Created model: {self.model_name} with pre-processing filter.')
+
+        # Throw an error if there are extra keyword arguments
+        if len(kwargs) > 0:
+            extra = ', '.join('"%s"' % k for k in list(kwargs.keys()))
+            raise ValueError('Unrecognized arguments %s' % extra)
+
+
+    def train(self):
+        
+        best_acc1 = 0
+        start = time.time()
 
         #  Autotuner runs a short benchmark and selects the kernel with the best performance on a given hardware for a given input size.
         cudnn.benchmark = True
@@ -221,7 +224,7 @@ class CNNClassifier(object):
             print(f"Epoch {epoch}: completed in {(time.time() - epoch_start)/60 :.2f} minutes")
         print(f"Training Complete in {(time.time() - start)/60 :.2f} minutes")
         gc.collect()
-        torch.cuda.empty_cache()
+        # torch.cuda.empty_cache()
         
     def validate(self):
         # Make predictions on validation set (custom dataset) and return accuracy and results
@@ -372,7 +375,7 @@ class CNNClassifier(object):
         return top1.avg
 
     def _save_checkpoint(self, state, is_best, alias='cnn'):
-        filename=f'./checkpoints/{alias}_ checkpoint.pth.tar'
+        filename=f'./checkpoints/{alias}_checkpoint.pth.tar'
         torch.save(state, filename)
         if is_best:
             shutil.copyfile(filename, f'./checkpoints/{alias}_model_best.pth.tar')
