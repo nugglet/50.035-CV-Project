@@ -224,7 +224,7 @@ class CNNClassifier(object):
             print(f"Epoch {epoch}: completed in {(time.time() - epoch_start)/60 :.2f} minutes")
         print(f"Training Complete in {(time.time() - start)/60 :.2f} minutes")
         gc.collect()
-        # torch.cuda.empty_cache()
+        torch.cuda.empty_cache()
         
     def validate(self):
         # Make predictions on validation set (custom dataset) and return accuracy and results
