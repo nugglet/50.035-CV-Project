@@ -105,7 +105,7 @@ class CNNClassifier(object):
 
         # apply data augmentation
         if self.colour_distort:
-            props.append(*filters.get_color_distortion())
+            props.extend(filters.get_color_distortion())
         if self.gaussian_blur:
             props.append(*filters.get_gaussian_blur())
 
