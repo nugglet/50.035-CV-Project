@@ -161,6 +161,22 @@ class CNNClassifier(object):
 
         self.scheduler = StepLR(self.optimizer, step_size=30, gamma=0.1)
 
+        
+
+        # Print Model
+        print(f'Created model: {self.model_name} with pre-processing filter.')
+
+        # Throw an error if there are extra keyword arguments
+        if len(kwargs) > 0:
+            extra = ', '.join('"%s"' % k for k in list(kwargs.keys()))
+            raise ValueError('Unrecognized arguments %s' % extra)
+
+
+    def train(self):
+        
+        best_acc1 = 0
+        start = time.time()
+
         # if resuming training from checkpoint
         if self.resume:
             if os.path.isfile(self.resume):
@@ -177,20 +193,6 @@ class CNNClassifier(object):
 
         else:
             print(f"=> no checkpoint found at '{self.resume}'")
-
-        # Print Model
-        print(f'Created model: {self.model_name} with pre-processing filter.')
-
-        # Throw an error if there are extra keyword arguments
-        if len(kwargs) > 0:
-            extra = ', '.join('"%s"' % k for k in list(kwargs.keys()))
-            raise ValueError('Unrecognized arguments %s' % extra)
-
-
-    def train(self):
-        
-        best_acc1 = 0
-        start = time.time()
 
         #  Autotuner runs a short benchmark and selects the kernel with the best performance on a given hardware for a given input size.
         cudnn.benchmark = True
@@ -232,6 +234,24 @@ class CNNClassifier(object):
             return "No validation dataset specified"
 
         else:
+
+             # if resuming training from checkpoint
+            if self.resume:
+                if os.path.isfile(self.resume):
+                    print(f"=> loading checkpoint '{self.resume}'")
+                    checkpoint = torch.load(self.resume)
+                
+                self.start_epoch = checkpoint['epoch']
+                best_acc1 = checkpoint['best_acc1']
+                
+                self.model.load_state_dict(checkpoint['state_dict'])
+                self.optimizer.load_state_dict(checkpoint['optimizer'])
+                self.scheduler.load_state_dict(checkpoint['scheduler'])
+                print(f"=> loaded checkpoint '{self.resume}' (epoch {checkpoint['epoch']})")
+
+            else:
+                print(f"=> no checkpoint found at '{self.resume}'")
+
             val_loader = self.dataloaders['val']
             batch_time = AverageMeter('Time', ':6.3f', Summary.NONE)
             losses = AverageMeter('Loss', ':.4e', Summary.NONE)
