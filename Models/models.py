@@ -132,7 +132,7 @@ class CNNClassifier(object):
                                             transforms.CenterCrop(self.image_size), 
                                             transforms.ToTensor()])
             val = datasets.ImageFolder(self.val_data_path, transform=val_props)
-            val_dataloader = DataLoader(val, batch_size=self.batch_size, shuffle=True, num_workers=self.workers)
+            val_dataloader = DataLoader(val, batch_size=self.batch_size, shuffle=True, num_workers=self.workers, pin_memory=True)
         else:
             val_dataloader = None
 
@@ -164,7 +164,7 @@ class CNNClassifier(object):
         
 
         # Print Model
-        print(f'Created model: {self.model_name} with pre-processing filter.')
+        print(f'Created model: {self.model_name}')
 
         # Throw an error if there are extra keyword arguments
         if len(kwargs) > 0:
@@ -223,77 +223,71 @@ class CNNClassifier(object):
                 'scheduler' : self.scheduler.state_dict()
             }, is_best, alias=self.alias)
 
+            gc.collect()
             print(f"Epoch {epoch}: completed in {(time.time() - epoch_start)/60 :.2f} minutes")
         print(f"Training Complete in {(time.time() - start)/60 :.2f} minutes")
-        gc.collect()
-        torch.cuda.empty_cache()
         
-    def validate(self):
+        # torch.cuda.empty_cache()
+        
+    def validate(self, val_loader=None):
         # Make predictions on validation set (custom dataset) and return accuracy and results
-        if self.dataloaders['val'] is None:
+        if self.dataloaders['val'] is None and val_loader is None:
             return "No validation dataset specified"
 
-        else:
-
-             # if resuming training from checkpoint
-            if self.resume:
-                if os.path.isfile(self.resume):
-                    print(f"=> loading checkpoint '{self.resume}'")
-                    checkpoint = torch.load(self.resume)
-                
-                self.start_epoch = checkpoint['epoch']
-                best_acc1 = checkpoint['best_acc1']
-                
-                self.model.load_state_dict(checkpoint['state_dict'])
-                self.optimizer.load_state_dict(checkpoint['optimizer'])
-                self.scheduler.load_state_dict(checkpoint['scheduler'])
-                print(f"=> loaded checkpoint '{self.resume}' (epoch {checkpoint['epoch']})")
-
-            else:
-                print(f"=> no checkpoint found at '{self.resume}'")
-
-            val_loader = self.dataloaders['val']
-            batch_time = AverageMeter('Time', ':6.3f', Summary.NONE)
-            losses = AverageMeter('Loss', ':.4e', Summary.NONE)
-            top1 = AverageMeter('Acc@1', ':6.2f', Summary.AVERAGE)
-            top5 = AverageMeter(f'Acc@{self.top_k}', ':6.2f', Summary.AVERAGE)
-            progress = ProgressMeter(
-                len(val_loader),
-                [batch_time, losses, top1, top5],
-                prefix='Validate: ')
-
-            # switch to evaluate mode
-            self.model.eval()
-
-            with torch.no_grad():
-                end = time.time()
-                for i, (images, target) in enumerate(val_loader):
+        # if resuming training from checkpoint
+        if self.resume:
+            if os.path.isfile(self.resume):
+                print(f"=> loading checkpoint '{self.resume}'")
+                checkpoint = torch.load(self.resume)
             
-                    # if torch.cuda.is_available():
-                    #     target = target.cuda(0, non_blocking=True)
-                    images = images.to(self.device)
-                    target = target.to(self.device)
+            self.model.load_state_dict(checkpoint['state_dict'])
+            self.optimizer.load_state_dict(checkpoint['optimizer'])
+            self.scheduler.load_state_dict(checkpoint['scheduler'])
+            print(f"=> loaded checkpoint '{self.resume}'")
 
-                    # compute output
-                    output = self.model(images)
-                    loss = self.criterion(output, target)
+        else:
+            print(f"=> no checkpoint found at '{self.resume}'")
 
-                    # measure accuracy and record loss
-                    acc_1, acc_k = accuracy(output, target, topk=(1, self.top_k))
-                    losses.update(loss.item(), images.size(0))
-                    top1.update(acc_1[0], images.size(0))
-                    top5.update(acc_k[0], images.size(0))
+        if val_loader is None:
+            val_loader = self.dataloaders['val']
+        batch_time = AverageMeter('Time', ':6.3f', Summary.NONE)
+        top1 = AverageMeter('Acc@1', ':6.2f', Summary.AVERAGE)
+        top5 = AverageMeter(f'Acc@{self.top_k}', ':6.2f', Summary.AVERAGE)
+        progress = ProgressMeter(
+            len(val_loader),
+            [batch_time, top1, top5],
+            prefix='Validate: ')
 
-                    # measure elapsed time
-                    batch_time.update(time.time() - end)
-                    end = time.time()
+        # switch to evaluate mode
+        self.model.eval()
 
-                    if i % self.print_every == 0:
-                        progress.display(i)
+        preds = []
+        with torch.no_grad():
+            end = time.time()
+            for i, (images, target) in enumerate(val_loader):
+        
+                images = images.to(self.device)
+                target = target.to(self.device)
 
-                progress.display_summary()
+                # compute output
+                output = self.model(images)
+                preds.append((target, output))
 
-            return top1.avg
+                # measure accuracy and record loss
+                acc_1, acc_k = accuracy(output, target, topk=(1, self.top_k))
+                top1.update(acc_1[0], images.size(0))
+                top5.update(acc_k[0], images.size(0))
+
+                # measure elapsed time
+                batch_time.update(time.time() - end)
+                end = time.time()
+
+                if i % self.print_every == 0:
+                    progress.display(i)
+
+            progress.display_summary()
+
+        return top1.avg, preds
         
 
     def _train(self, epoch):
