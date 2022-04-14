@@ -1,5 +1,5 @@
-# 50.039-CV-Project
-50.039 Computer Vision Project
+# 50.035-CV-Project
+50.035 Computer Vision Project
 
 Sketch Image Classification with Shape-bias Computer Vision
 
@@ -27,7 +27,7 @@ ability in learning (out-of-domain) semantics at ImageNet scale (github.com)](ht
 For the models:
 >python==3.6 and above
 >
->pytorch==
+>pytorch==1.10.1
 >
 >opencv-python==3.4.17
 
