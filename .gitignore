@@ -3,5 +3,7 @@
 
 # Byte-compiled / optimized / DLL files
 *.py[cod]
+
+
 Models/__pycache__/*
-Models/__pycache__/filters.cpython-39.pyc
+Models/checkpoints/*

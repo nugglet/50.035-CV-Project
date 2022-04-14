@@ -97,6 +97,7 @@ class CNNClassifier(object):
         self.print_every = kwargs.pop('print_every', 10)
         self.verbose = kwargs.pop('verbose', True)
         self.print_model = kwargs.pop('print_model', False)
+        self.save_model = kwargs.pop('save_model', True)
 
         # get data
         props = [ transforms.Resize(self.image_size+1),
@@ -115,12 +116,10 @@ class CNNClassifier(object):
             
         self.transform = transforms.Compose(props)
 
-        # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-
         full = datasets.ImageFolder(train_data_path, transform=self.transform)
 
         # split dataset into train and test sets
-        dataset_total_size = len([f for f in Path(train_data_path).glob('*\*.JPEG')])
+        dataset_total_size = len([f for f in Path(train_data_path).glob('*\*')])
         train, test = torch.utils.data.random_split(full, [int(dataset_total_size * 0.8), dataset_total_size - int(dataset_total_size * 0.8)], generator=torch.Generator().manual_seed(self.seed))
         train_dataloader = DataLoader(train, batch_size=self.batch_size, shuffle=True, num_workers=self.workers, pin_memory=True)
         test_dataloader = DataLoader(test, batch_size=self.batch_size, shuffle=True, num_workers=self.workers, pin_memory=True)
@@ -128,11 +127,8 @@ class CNNClassifier(object):
         # load val data into dataloader if path given. No data augmentation is performed on the validation data.
         self.val_data_path = kwargs.pop('val_data_path', None)
         if self.val_data_path is not None:
-            val_props = transforms.Compose([transforms.Resize(self.image_size+1),
-                                            transforms.CenterCrop(self.image_size), 
-                                            transforms.ToTensor()])
-            val = datasets.ImageFolder(self.val_data_path, transform=val_props)
-            val_dataloader = DataLoader(val, batch_size=self.batch_size, shuffle=True, num_workers=self.workers, pin_memory=True)
+            val = datasets.ImageFolder(self.val_data_path, transform=self.transform)
+            val_dataloader = DataLoader(val, batch_size=1, shuffle=False, num_workers=self.workers)
         else:
             val_dataloader = None
 
@@ -148,7 +144,7 @@ class CNNClassifier(object):
         if self.feature_extracting:
             self._set_parameter_requires_grad(self.model, self.feature_extracting)
       
-        self.model = self.model.to(device=self.device)
+        self.model = self.model.to(self.device)
 
         if self.print_model:
             print(self.model.eval())
@@ -161,7 +157,23 @@ class CNNClassifier(object):
 
         self.scheduler = StepLR(self.optimizer, step_size=30, gamma=0.1)
 
-        
+        # if resuming training from checkpoint
+        self.best_acc1 = 0
+        if self.resume:
+            if os.path.isfile(self.resume):
+                print(f"=> loading checkpoint '{self.resume}'")
+                checkpoint = torch.load(self.resume)
+            
+                self.start_epoch = checkpoint['epoch']
+                self.best_acc1 = checkpoint['best_acc1']
+                
+                self.model.load_state_dict(checkpoint['state_dict'])
+                self.optimizer.load_state_dict(checkpoint['optimizer'])
+                self.scheduler.load_state_dict(checkpoint['scheduler'])
+                print(f"=> loaded checkpoint '{self.resume}' (epoch {checkpoint['epoch']})")
+
+        else:
+            print(f"=> no checkpoint found at '{self.resume}'")
 
         # Print Model
         print(f'Created model: {self.model_name}')
@@ -174,25 +186,7 @@ class CNNClassifier(object):
 
     def train(self):
         
-        best_acc1 = 0
         start = time.time()
-
-        # if resuming training from checkpoint
-        if self.resume:
-            if os.path.isfile(self.resume):
-                print(f"=> loading checkpoint '{self.resume}'")
-                checkpoint = torch.load(self.resume)
-            
-            self.start_epoch = checkpoint['epoch']
-            best_acc1 = checkpoint['best_acc1']
-            
-            self.model.load_state_dict(checkpoint['state_dict'])
-            self.optimizer.load_state_dict(checkpoint['optimizer'])
-            self.scheduler.load_state_dict(checkpoint['scheduler'])
-            print(f"=> loaded checkpoint '{self.resume}' (epoch {checkpoint['epoch']})")
-
-        else:
-            print(f"=> no checkpoint found at '{self.resume}'")
 
         #  Autotuner runs a short benchmark and selects the kernel with the best performance on a given hardware for a given input size.
         cudnn.benchmark = True
@@ -211,17 +205,18 @@ class CNNClassifier(object):
             self.scheduler.step()
             
             # remember best acc@1 and save checkpoint
-            is_best = acc1 > best_acc1
-            best_acc1 = max(acc1, best_acc1)
+            is_best = acc1 > self.best_acc1
+            self.best_acc1 = max(acc1, self.best_acc1)
 
-            self._save_checkpoint({
-                'epoch': epoch + 1,
-                'arch': self.model_name,
-                'state_dict': self.model.state_dict(),
-                'best_acc1': best_acc1,
-                'optimizer' : self.optimizer.state_dict(),
-                'scheduler' : self.scheduler.state_dict()
-            }, is_best, alias=self.alias)
+            if self.save_model:
+                self._save_checkpoint({
+                    'epoch': epoch + 1,
+                    'arch': self.model_name,
+                    'state_dict': self.model.state_dict(),
+                    'best_acc1': self.best_acc1,
+                    'optimizer' : self.optimizer.state_dict(),
+                    'scheduler' : self.scheduler.state_dict()
+                }, is_best, alias=self.alias)
 
             gc.collect()
             print(f"Epoch {epoch}: completed in {(time.time() - epoch_start)/60 :.2f} minutes")
@@ -234,47 +229,39 @@ class CNNClassifier(object):
         if self.dataloaders['val'] is None and val_loader is None:
             return "No validation dataset specified"
 
-        # if resuming training from checkpoint
-        if self.resume:
-            if os.path.isfile(self.resume):
-                print(f"=> loading checkpoint '{self.resume}'")
-                checkpoint = torch.load(self.resume)
-            
-            self.model.load_state_dict(checkpoint['state_dict'])
-            self.optimizer.load_state_dict(checkpoint['optimizer'])
-            self.scheduler.load_state_dict(checkpoint['scheduler'])
-            print(f"=> loaded checkpoint '{self.resume}'")
-
-        else:
-            print(f"=> no checkpoint found at '{self.resume}'")
-
         if val_loader is None:
             val_loader = self.dataloaders['val']
+
+        # print(len(val_loader.dataset))
+        self.model.eval()
+
         batch_time = AverageMeter('Time', ':6.3f', Summary.NONE)
+        losses = AverageMeter('Loss', ':.4e', Summary.NONE)
         top1 = AverageMeter('Acc@1', ':6.2f', Summary.AVERAGE)
         top5 = AverageMeter(f'Acc@{self.top_k}', ':6.2f', Summary.AVERAGE)
         progress = ProgressMeter(
             len(val_loader),
-            [batch_time, top1, top5],
+            [batch_time, losses, top1, top5],
             prefix='Validate: ')
-
-        # switch to evaluate mode
-        self.model.eval()
 
         preds = []
         with torch.no_grad():
             end = time.time()
             for i, (images, target) in enumerate(val_loader):
         
+                # if torch.cuda.is_available():
+                #     target = target.cuda(0, non_blocking=True)
                 images = images.to(self.device)
                 target = target.to(self.device)
 
                 # compute output
                 output = self.model(images)
+                loss = self.criterion(output, target)
                 preds.append((target, output))
 
                 # measure accuracy and record loss
                 acc_1, acc_k = accuracy(output, target, topk=(1, self.top_k))
+                losses.update(loss.item(), images.size(0))
                 top1.update(acc_1[0], images.size(0))
                 top5.update(acc_k[0], images.size(0))
 
@@ -286,8 +273,9 @@ class CNNClassifier(object):
                     progress.display(i)
 
             progress.display_summary()
+        self.validation_output = preds
 
-        return top1.avg, preds
+        # return top1.avg, preds
         
 
     def _train(self, epoch):
